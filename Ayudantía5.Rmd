@@ -1,0 +1,197 @@
+---
+title: "Actividad Ayudantía 5-Cristóbal Paredes "
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+getwd()
+setwd("C:/Users/Cristobal/Desktop/Minería de D")
+Pokemon<-read.csv("pokemon.csv",sep=",")
+library(tidyverse)
+```
+```{r}
+head(Pokemon)
+```
+
+```{r}
+summary(Pokemon)
+```
+### Para Clusterizar usaremos las variables HP,Attach,Speed,Generation,Defense,Total,Legendary
+ 
+```{r}
+Pok_1 <- Pokemon[, colnames(Pokemon) %in% c("HP", "Attack", "Defense", "Speed", "Generation")]
+escal_Pokemon = scale(Pok_1) %>% as_tibble()
+escal_Pokemon %>% summary()
+
+```
+### Una vez escalada nuestra BD, aplicamos K-medias con K=8
+```{r}
+
+kmeans_1 <- kmeans(escal_Pokemon, centers = 8)
+kmeans_2 <- kmeans(Pok_1, centers = 8)
+```
+##Creamos la Variable Cluster 
+
+```{r}
+escal_Pokemon$clus <- kmeans_1$cluster %>% as.factor()
+Pok_1$clus <- kmeans_2$cluster %>% as.factor()
+ggplot(escal_Pokemon, aes(Defense, Attack, color=clus)) +
+  geom_point(alpha=0.5, show.legend = T) +
+  theme_bw()
+```
+```{r}
+ggplot(Pok_1, aes(Defense, Attack, color=clus)) +
+  geom_point(alpha=0.5, show.legend = T) +
+  theme_bw()
+```
+###Arrojamos La información de nuestros clusters
+```{r}
+info_clusters <- kmeans_1$centers
+info_clusters2 <- kmeans_2$centers
+info_clusters
+info_clusters2
+```
+```{r}
+```
+###Evolución suma de cuadrados 
+
+```{r}
+SSinterior <- numeric(30)
+for(k in 1:30){
+  modelo <- kmeans(escal_Pokemon, centers = k)
+  SSinterior[k] <- modelo$tot.withinss
+}
+plot(SSinterior)
+```
+###Método del codo 2 
+```{r}
+k.max <- 30
+wss1 <- sapply(1:k.max, 
+              function(k){kmeans(escal_Pokemon, k, nstart=50,iter.max = 8)$tot.withinss})
+wss2 <- sapply(1:k.max, 
+              function(k){kmeans(Pok_1, k, nstart=50,iter.max = 8)$tot.withinss})
+
+```
+###Gráficamos wss1 y wss2
+```{r}
+plot(1:k.max, wss1,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Clusters K",
+     ylab="Total within-clusters suma de cuadrados")
+```
+
+```{r}
+plot(1:k.max, wss2,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Clusters K",
+     ylab="Total within-clusters suma de cuadrados")
+```
+
+###Evaluación--> Inspección Visual 
+```{r}
+escal_Pokemon$clus <- as.numeric(escal_Pokemon$clus)
+Pok_1$clus <- as.numeric(Pok_1$clus)
+## Usamos Distancia Euclidiana
+tempDist <- dist(escal_Pokemon) %>% as.matrix()
+#reordenamos  filas y columnas según el cluster que obtuvimos
+index <- sort(kmeans_1$cluster, index.return=TRUE)
+tempDist <- tempDist[index$ix,index$ix]
+rownames(tempDist) <- c(1:nrow(escal_Pokemon))
+colnames(tempDist) <- c(1:nrow(escal_Pokemon))
+image(tempDist)
+```
+###Estadístico de Hopkins
+```{r}
+
+library(factoextra)
+ 
+res <- get_clust_tendency(escal_Pokemon, n = 30, graph = FALSE)
+res2 <- get_clust_tendency(Pok_1, n = 30, graph = FALSE)
+print(res)
+print(res2)
+```
+###Índice de Correlación
+```{r}
+#Realizamos Correlación
+tempMatrix <- matrix(0, nrow = nrow(Pok_1), ncol = nrow(Pok_1))
+tempMatrix[which(index$x==1), which(index$x==1)]  <- 1
+tempMatrix[which(index$x==2), which(index$x==2)]  <- 1
+tempMatrix[which(index$x==3), which(index$x==3)]  <- 1
+tempMatrix[which(index$x==4), which(index$x==4)]  <- 1
+tempMatrix[which(index$x==5), which(index$x==5)]  <- 1
+tempMatrix[which(index$x==6), which(index$x==6)]  <- 1
+tempMatrix[which(index$x==7), which(index$x==7)]  <- 1
+tempMatrix[which(index$x==8), which(index$x==8)]  <- 1
+tempMatrix[which(index$x==9), which(index$x==9)]  <- 1
+tempMatrix[which(index$x==10), which(index$x==10)] <- 1
+##Obtenemos matriz de disimilitud
+tempDist2 <- 1/(1+tempDist)
+
+##Calculamos  correlación 
+cor <- cor(tempMatrix[upper.tri(tempMatrix)],tempDist2[upper.tri(tempDist2)])
+
+print(cor)
+```
+##Índice de cohesión y separación
+```{r}
+library(flexclust)
+```
+```{r}
+withinCluster <- numeric(8)
+for (i in 1:8){
+  tempdata_pk <- escal_Pokemon[which(kmeans_1$cluster == i),]
+  withinCluster[i] <- sum(dist2(tempdata_pk,colMeans(tempdata_pk))^2)
+}
+cohesion = sum(withinCluster)
+#es equivalente a model$tot.withinss en k-means
+print(c(cohesion, kmeans_1$tot.withinss))
+```
+###Ahora, realizaremos la separación
+```{r}
+meandata_pk <- colMeans(escal_Pokemon)
+SSB <- numeric(8)
+for (i in 1:8){
+  tempdata_pk <- escal_Pokemon[which(kmeans_1$cluster==i),]
+  SSB[i] <- nrow(tempdata_pk)*sum((meandata_pk-colMeans(tempdata_pk))^2)
+}
+separation = sum(SSB)
+
+print(separation)
+```
+###Desarrollamos Nuestro Coeficiente de Silueta
+```{r}
+library(cluster)
+coefSil <- silhouette(kmeans_1$cluster,dist(escal_Pokemon))
+summary(coefSil)
+```
+###Arrojamos código de silueta de cada Cluster
+```{r}
+```
+
+
+```{r}
+fviz_silhouette(coefSil) + coord_flip()
+```
+
+
+```{r}
+coefSil=numeric(30)
+for (k in 2:30){
+  modelo1 <- kmeans(escal_Pokemon, centers = k)
+  temp <- silhouette(modelo1$cluster,dist(escal_Pokemon))
+  coefSil[k] <- mean(temp[,3])
+}
+tempDF=data.frame(CS=coefSil,K=c(1:30))
+
+ggplot(tempDF, aes(x=K, y=CS)) + 
+  geom_line() +
+  scale_x_continuous(breaks=c(1:30))
+```
+
+
+
+
+
